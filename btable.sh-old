@@ -1,0 +1,66 @@
+#!/bin/bash
+# vi:set nu nowrap:
+# btable.sh: .
+
+# $Id:$
+# Federal University of Rio de Janeiro
+#      Author: Ivan carlos da Silva Lopes
+#        Mail: lopesivan (dot) ufrj (at) gmail (dot) com
+#     License: gpl
+#    Language: Shell Script
+#        File: btable.sh
+#        Date: Sun 30 Nov 2008 07:01:06 AM BRST
+# Description:
+#
+#
+
+Example()
+{
+	case $1 in 
+		1) echo "btable -c3 -m 1| nl  -i1  -nrz  -s'|'  -v1  -w2"
+		;;
+		2) echo "btable -c3 -m 1,5| nl  -i1  -nrz  -s'|'  -v1  -w2| sed '1i\  \ a b c f'"
+		;;
+		*) echo "btable -c3 -m 1"
+		;;
+	esac
+}
+# ----------------------------------------------------------------------------
+while getopts c:m:e: o
+do
+	case "$o" in
+		m)  minterm=$OPTARG;
+			minterm_OK=1
+		;;
+
+		c)	nColumns=$OPTARG;
+			columns_OK=1;
+		;;
+
+		e)	Example $OPTARG;
+			exit 0;
+		;;
+
+		*) echo  "Usage: $0 [-c] nColumns -[m] 1,2,3..."
+			exit 1;;
+	esac
+done
+
+if [ "$columns_OK"="1" -a "$minterm_OK"="1" ]; then
+
+	for i in $( echo $minterm | sed 's/,/ /g' ); do
+		cmd=${cmd}$((i+1))s/0$/1/";"
+	done
+
+        eval echo `seq $nColumns   |
+            tr "\n" "@"            |
+            sed "s/[0-9]\+/{0,1}/g"|
+            sed 's/@//g'`          |
+				tr " " "\n"        | 
+					sed '1{x;p;x;}; s/./& /g; s/$/0/'| 
+						sed "$cmd" |
+							sed '1d'
+fi
+
+# ----------------------------------------------------------------------------
+exit 0
