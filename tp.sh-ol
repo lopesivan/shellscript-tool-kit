@@ -1,0 +1,358 @@
+#!/bin/bash
+# vi:set nu nowrap:
+# g_opt.sh: <+ =Short Description= +>.
+
+# $Id:$
+# Federal University of Rio de Janeiro
+#      Author: Ivan carlos da Silva Lopes
+#        Mail: lopesivan (dot) ufrj (at) gmail (dot) com
+#     License: gpl
+#    Language: Shell Script
+#        File: tp.sh
+#        Date: Sat 27 Jun 2009 07:01:13 PM EDT
+# Description:
+#
+#
+
+# ----------------------------------------------------------------------------
+nversion=2.1
+templatedir=~/.template
+#-----------------------------------------------------------------------------
+#-----------------------------------------------------------------------------
+#-----------------------------------------------------------------------------
+[ "$1" = '-d' ] && { DEBUG=1; shift; }
+_debug(){ [ "$DEBUG" = 1 ] && echo "$*" ; }
+_basename=${0##*/}
+
+#
+# opt
+#
+source ${SHELLSCRIPT_PAKAGES}//getoptx.sh
+source ${SHELLSCRIPT_PAKAGES}//getoptx.sh
+#
+# commun functions
+#
+source ${SHELLSCRIPT_PAKAGES}//util.sh
+source ${SHELLSCRIPT_PAKAGES}//util.sh
+
+#
+#=============================================================================
+#
+
+#
+# Version
+#
+function _version()
+{
+	# Verify command cat
+	#
+	have cat &&
+	{
+         cat <<EOF
+$_basename (ice tools) $nversion
+Copyright (C) 2008 Free Software Foundation, Inc.
+License GPLv3+: GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>
+This is free software: you are free to change and redistribute it.
+There is NO WARRANTY, to the extent permitted by law.
+
+Written by ${_author}.
+EOF
+	} || { _error 'bash: cat: command not found'; _abort_now; }
+	# End have cat
+}
+
+#
+#=============================================================================
+#
+
+#
+# Usage
+#
+function _usage()
+{
+	# Verify command cat
+	#
+	have cat &&
+	{
+         cat <<EOF
+Usage: $_basename [-DIGITS] [OPTION]... [FILE]...
+Reformat each paragraph in the FILE(s), writing to standard output.
+If no FILE or if FILE is \`-', read standard input.
+
+Mandatory arguments to long options are mandatory for short options too.
+  -c, --crown-margin        preserve indentation of first two lines
+  -p, --prefix=STRING       reformat only lines beginning with STRING,
+                              reattaching the prefix to reformatted lines
+  -s, --split-only          split long lines, but do not refill
+  -t, --tagged-paragraph    indentation of first line different from second
+  -u, --uniform-spacing     one space between words, two after sentences
+  -w, --width=WIDTH         maximum line width (default of 75 columns)
+      --help     display this help and exit
+      --version  output version information and exit
+
+With no FILE, or when FILE is -, read standard input.
+
+Report bugs to <${_mail}>.
+EOF
+	} || { _error 'bash: cat: command not found'; _abort_now; }
+	# End have cat
+}
+
+#
+#=============================================================================
+#
+
+#
+# Help
+#
+function _help()
+{
+	# Verify command cat
+	#
+	have cat &&
+	{
+         cat <<EOF
+Usage: $_basename [-DIGITS] [OPTION]... [FILE]...
+Reformat each paragraph in the FILE(s), writing to standard output.
+If no FILE or if FILE is \`-', read standard input.
+
+Mandatory arguments to long options are mandatory for short options too.
+  -c, --crown-margin        preserve indentation of first two lines
+  -p, --prefix=STRING       reformat only lines beginning with STRING,
+                              reattaching the prefix to reformatted lines
+  -s, --split-only          split long lines, but do not refill
+  -t, --tagged-paragraph    indentation of first line different from second
+  -u, --uniform-spacing     one space between words, two after sentences
+  -w, --width=WIDTH         maximum line width (default of 75 columns)
+      --help     display this help and exit
+      --version  output version information and exit
+
+With no FILE, or when FILE is -, read standard input.
+
+Report bugs to <${_mail}>.
+EOF
+	} || { _error 'bash: cat: command not found'; _abort_now; }
+	# End have cat
+}
+
+#
+#=============================================================================
+#
+
+function _example()
+{
+	case $1 in
+		1)
+			echo "$ echo TEXT TEXT | $_basename  -tc;";
+			echo TEXT TEXT | $_basename  -tc;
+		;;
+		2)
+			echo "$ echo TEXT TEXT | $_basename  -tc -l";
+			echo TEXT TEXT | $_basename  -tc -l
+		;;
+		3)
+			echo "$ echo TEXT TEXT | $_basename  -tc -r";
+			echo TEXT TEXT | $_basename  -tc -r
+		;;
+		4)
+			echo "$ echo TEXT TEXT | $_basename  -tcpp -l";
+			echo TEXT TEXT | $_basename  -tcpp -l
+		;;
+		all)
+			for n in `seq 1 7`; do $_basename -e$n; done
+		;;
+		*)
+			echo "$ echo  hello! Comment | $_basename  -tc  -b -l";
+			echo  hello! Comment | $_basename  -tc  -b -l
+		;;
+	esac
+}
+##############################################################################
+##############################################################################
+##############################################################################
+#-----------------------------------------------------------------------------
+#-----------------------------------------------------------------------------
+#-----------------------------------------------------------------------------
+
+[ "$1" ] || { _usage; exit 1; }
+
+#-----------------------------------------------------------------------------
+# isdigit
+expr "$1" : '[[:digit:]]\{1,\}' > /dev/null
+
+if [ $? -eq 0 ]; then
+
+		[ $1 -gt $(wc -l ${templatedir}/.lastoption| cut -d" " -f1) -o $1 -eq 0 ] &&
+			echo the value $1 out of range &&
+				exit 1
+
+		source ${templatedir}/.lastoption
+
+		[ "$2" ] && {
+				case $2 in
+						debug)
+							cat  ${templatedir}/.lastoption
+							echo "option: ${OLDOPTION[$1]}"
+							echo "file  : ${OLDOPTION[$1]#--}.txt"
+						;;
+						file)
+							echo ${templatedir}/${OLDOPTION[$1]#--}.txt
+						;;
+						*)
+							echo "Usage: `basename $0` number [file|debug]"
+						;;
+				esac
+		} || {
+
+			_debug $_basename ${OLDOPTION[$1]}
+			# $_basename ${OLDOPTION[$1]}
+		}
+
+	exit 0
+fi
+
+##############################################################################
+
+################################# My options. ################################
+_opt=\
+"
+-l| --list      |
+"
+##############################################################################
+#-----------------------------------------------------------------------------
+#-----------------------------------------------------------------------------
+#-----------------------------------------------------------------------------
+_opt=\
+`echo $_opt| \
+sed \
+'\
+s/ //g                          ;\
+s/-\(.[:.]\?\)\s*|/\1  /g       ;\
+:b                              ;\
+s/--\(.[^ .]\+[:.]\)\s*|/ \1 /  ;\
+tb                              ;\
+s/--\(.[^ |]\+\)\s*|/ \1 /g     ;\
+s/--\(.[^ |]\+\)\s*/ \1 /
+'`
+#-----------------------------------------------------------------------------
+#-----------------------------------------------------------------------------
+#-----------------------------------------------------------------------------
+_debug Using getoptex to parse arguments:
+_debug $_opt
+
+while getoptex "$_opt usage help version" "$@"
+do
+	_debug "Option <$OPTOPT> ${OPTARG:+has an arg <$OPTARG>}"
+	echo $OPTOPT | grep '-' 1> /dev/null
+	if [ $? = 0 ]; then
+		eval flag_${OPTOPT//-/_}=1
+		[ "$OPTARG" ] && eval flag_${OPTOPT//-/_}_val=${OPTARG}
+	else
+		eval flag_${OPTOPT}=1
+		[ "$OPTARG" ] && eval flag_${OPTOPT}_val=${OPTARG}
+	fi
+
+	case ${OPTOPT} in
+	help     ) eval flag_${OPTOPT}=1
+	;;
+
+	version  ) eval flag_${OPTOPT}=1
+	;;
+
+	usage    ) eval flag_${OPTOPT}=1
+	;;
+	esac
+
+done
+shift $[OPTIND-1]
+for arg in "$@"
+do
+	echo "Non option argument <$arg>"
+done
+#-----------------------------------------------------------------------------
+#-----------------------------------------------------------------------------
+#-----------------------------------------------------------------------------
+#-----------------------------------------------------------------------------
+#-----------------------------------------------------------------------------
+#-----------------------------------------------------------------------------
+if [ "$flag_help" = 1 ]; then
+#	_debug flag_help ON
+	_help
+	exit 0
+else
+	:
+#	_debug flag_help OFF
+fi
+
+if [ "$flag_version" = 1 ]; then
+#	_debug flag_version ON
+	_version
+	exit 0
+else
+	:
+#	_debug flag_version OFF
+fi
+
+if [ "$flag_usage" = 1 ]; then
+#	_debug flag_usage ON
+	_usage
+	exit 0
+else
+	:
+#	_debug flag_usage OFF
+fi
+
+#-----------------------------------------------------------------------------
+#-----------------------------------------------------------------------------
+#-----------------------------------------------------------------------------
+
+: ${flag_l:=0}
+: ${flag_list:=0}
+
+if [ "$flag_l" = "1" -o "$flag_list" = "1" ];
+then
+	:
+	_debug "flag_l = $flag_l"
+	_debug "flag_list = $flag_list"
+#%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+	__opt__=( `ls ${templatedir} | grep 'txt$' | sed "s/\.txt//g; s/^/--/"` )
+	_debug : $__opt__
+	IFS=@
+echo : $2
+	[ "$2" ] && {
+
+		# box message.
+		echo "${__opt__[*]}" |
+		sed 's/@/\n/g'       |
+		grep -e "^$2.*"      | sort -n -t. -k3 |
+		cat -n|
+		grep --color "${2#--}"
+
+		echo "${__opt__[*]}" | sed 's/@/\n/g' | grep -e "^$2.*"| sort -n -t. -k3 | cat -n |
+		sed -r 's/$/;/; s/\s+([0-9]+)\s/OLDOPTION[\1]=/' > ${templatedir}/.lastoption
+
+		echo option: $2
+
+	} || _usage
+else
+
+	case $1 in
+		--*)
+			o=${1#--}
+			file=${templatedir}/`expr "${__opt__[*]}" : ".*--\($o\)@\?.*"`.txt
+                        test -e $file     &&
+                        	cat $file ||
+				{ echo $1: not found; _usage; }
+			;;
+
+		*)	echo $1: is not option
+			echo ":("
+			_usage
+		;;
+	esac
+#%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+fi
+
+#-----------------------------------------------------------------------------
+exit 0
