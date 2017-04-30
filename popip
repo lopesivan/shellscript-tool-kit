@@ -1,0 +1,462 @@
+#!/usr/bin/perl
+# ========================================================================
+# 				popip
+# ========================================================================
+# Jean-Michel Sarlat                                   dimanche 4 mai 2008
+# ========================================================================
+$VERSION = "0.1.2";
+package GS;
+
+use File::Basename;
+### --- Commandes GhostScript -----------------------------------------------
+my $GSBBOX	= "";
+my $GSPIPE 	= " 2>&1 1>/dev/null |";
+my $GSPSPDF 	= "gs -q -dNOPAUSE -dBATCH -sDEVICE=pdfwrite -dNOSAFER ";
+my $GSPNMRAW  	= "gs -sDEVICE=pnmraw -dBATCH -dNOPAUSE -dMaxBitmap=500000000 ";
+   $GSPNMRAW   .= "-dAlignToPixels=0";
+my $GSPNM  	= "";
+my $GSPNMP 	= " 2>&1 1>/dev/null";
+### --- Paramètres ----------------------------------------------------------
+my $PNGCNF      = "png8:";
+my $GSPNMRES 	= 144 ; # Résolution initiale pour la fabrication des images.
+my $GSPNMTAB 	= 4   ; # TextAlphaBits
+my $GSPNMGAB 	= 4   ; # GraphicsAlphaBits
+my $GSPAPERSIZE = ""  ; # PAPERSIZE
+sub SetGSPNMCMD {
+    $GSPNM  	= "$GSPNMRAW -dGraphicsAlphaBits=$GSPNMGAB -dTextAlphaBits=$GSPNMTAB";
+    $GSPNM     .= " -r$GSPNMRES $GSPAPERSIZE " ;
+}
+sub SetGSBBOX {
+    $GSBBOX 	= "gs -sDEVICE=bbox -dBATCH -dNOPAUSE $GSPAPERSIZE -c save pop -f ";
+}
+SetGSPNMCMD();
+SetGSBBOX();
+sub SetGSPNMRES {
+    $GSPNMRES = shift;
+    SetGSPNMCMD();
+}
+sub SetGSPNMTAB {
+    $GSPNMTAB = shift;
+    SetGSPNMCMD();
+}
+sub SetGSPNMGAB {
+    $GSPNMGAB = shift;
+    SetGSPNMCMD();
+}
+sub SetGSPAPERSIZE {
+    $GSPAPERSIZE = shift;
+    SetGSPNMCMD();
+    SetGSBBOX();
+}
+### --- Constructeur générique ----------------------------------------------
+sub new {
+    my $classe = shift;
+    my $self = {};
+    bless($self,$classe);
+    $self->{FICHIER} = shift;
+    $self->{PREFIXE} = shift;
+    $self->Initialisation(@_);
+    return $self;
+}
+
+### --- Initialisation générique ---------------------------------------------
+sub Initialisation {
+    my $self = shift;		# l'objet
+    -f $self->{FICHIER} or die
+	"Impossible de trouver le fichier $self->{FICHIER}...\n";
+    my ($n,$d,$e) = fileparse($self->{FICHIER},qw{\..*});
+    $self->{EXTENSION} = $e;
+    $self->{PREFIXEINI} = $n;
+    $self->{REPERTOIRE} = $d;
+    $self->{BASE} = $ENV{PWD};
+    $self->{RMFICHIERS} = "";   # Fichiers à effacer éventuellement.
+    if (@_) {			# valeurs passées sous forme de hachage
+	my %extra = @_;		# à l'initialisation
+	@$self{keys %extra} = values %extra;
+    }
+    if ($e eq ".pdf") {
+	open FICHIER, $self->{FICHIER};
+	binmode FICHIER;
+	my $pdf = join('', <FICHIER>);
+	close FICHIER;
+	my ($r,$n,$p) = &getinfospdf(\$pdf);
+	$self->{PDFSOURCE} = $pdf;
+	$self->{PDFROOTOBJ} = $r;
+	$self->{PDFNBPAGES} = $n;
+	$self->{PDFREFPAGES} = $p;
+    }	
+}
+
+### --- Méthodes -------------------------------------------------------------
+sub EstPDF {
+    my $self = shift;
+    return 1 if $self->{EXTENSION} eq ".pdf";
+    return 0;
+}
+sub Prefixe {
+    my $self = shift;
+    return $self->{PREFIXE};
+}
+sub NombreDePages {
+    my $self = shift;
+    if (EstPDF($self)) {
+	return $self->{PDFNBPAGES};
+    } else {
+	$self->getbbox();
+	return scalar @{ $self->{BBOXPAGES} };
+    }
+}
+sub BBox {
+    my $self = shift;
+    $self->getbbox();
+    return @{ $self->{BBOXPAGES} };
+}
+sub UneImagePNG {
+    my $self = shift;
+    $self->getbbox();
+    $self->mkpng(@_);
+}
+sub ImagesPNG {
+    my $self = shift;
+    $self->getbbox();
+    $self->mkpngs(@_);
+}
+sub MakePDF {
+    my $self = shift;
+    my $marge = @_ ? shift : 5;
+    unless (EstPDF($self)) {
+	if ($self->NombreDePages() > 1) {
+	    qx{ps2pdf14 $self->{FICHIER}};
+	} else {
+	    my ($lx,$ly,$ux,$uy) = split /:/, $self->{BBOXPAGES}->[0];
+	    open(PDF,"| $GSPSPDF -sOutputFile=$self->{PREFIXE}.pdf -c .setpdfwrite -f \"-\"");
+	    print PDF &fp_dvipstopdf($lx,$ly,$ux,$uy,$marge,$self->{FICHIER});
+	    close(PDF);	    
+	}
+    }
+}
+sub EffaceFichiers {
+    my $self = shift;
+    if ($self->{RMFICHIERS} ne "") {
+	qx{rm -f $self->{RMFICHIERS}};
+    }
+}
+sub EffaceLog {
+    my $self = shift;
+    qx{rm -f $self->{PREFIXE}-GS.log};
+}
+
+### --- Routines générales ---------------------------------------------------
+sub getbbox {
+    my $self = shift;
+    unless (exists $self->{BBOXPAGES}) {
+	my $bb = "%%BoundingBox";
+	my $fichier = $self->{FICHIER};
+	my $cmdpipe = "$GSBBOX$fichier$GSPIPE";
+	my @BB = ();
+	open(CMD, $cmdpipe);
+	while (<CMD>) {
+	    next unless /^$bb:\s*([\.\d]+) ([\.\d]+) ([\.\d]+) ([\.\d]+)/o;
+	    push @BB, "$1:$2:$3:$4";
+	}
+	close(CMD);
+	$self->{BBOXPAGES} = \@BB;
+    }
+}
+sub mkpng {
+    my ($self,$fact,$bord,$inter,$x,$dx) = @_;
+    my $f = $self->{FICHIER};
+    my $pre = $self->{PREFIXE};
+    my $cmd = "$GSPNM -sOutputFile=$pre-\%03d.pnm $f";
+    $self->execution( $cmd.$GSPNMP );
+    if (-f "$pre-001.pnm") {
+	# Acquisition des dimensions de la première page, elles sont toutes
+	# identiques, normalement !
+	my ($w,$h) = &getimagedimensions("$pre-001.pnm");
+	$self->message("Dimensions de $pre-001.pnm : $w X $h");
+	# Compteur, à la fin de la boucle à venir, il contient le nombre de
+	# pages.
+	my $n = 0;
+	# Liste des images, elle sert à construire la commande convert
+	# suivie de l'option append.
+	my $liste = "";
+	# modrify n'accepte pas l'option +repage semble t-il, il faut donc
+	# passer par un convert, donc une image intermédiaire : $$.png. Le
+	# code ci-dessous est la partie centrale des commandes invoquées
+	# dans la boucle qui suit.
+	my $cmdc = "+repage $$.pnm && mv $$.pnm";
+	foreach (&setcrop($self->{BBOXPAGES},$fact,$bord,$inter,$x,$dx,$w,$h)) {
+	    $n++ ; my $img = sprintf("$pre-%03d.pnm",$n);
+	    # Cropping de la page avec l'option +repage de façon à actualiser
+	    # la géométrie de la page (si non on garde l'ancienne et cela gêne 
+	    # pour la suite : resize).
+	    my $cmd = "convert $img -crop $_ $cmdc $img";
+	    $self->execution($cmd);
+	    $liste .= "$img ";
+	}
+	if ($n == 1) {
+	    qx{cp $pre-001.pnm $pre-temp.pnm};
+	} else {
+	    qx{convert -append $liste $pre-temp.pnm};
+	}
+	$liste .= "$pre-temp.pnm ";
+	$self->{RMFICHIERS} .= $liste;
+	($w,$h) = &getimagedimensions("$pre-temp.pnm");
+	my $W = sprintf("%d",($w * $fact * 72) / $GSPNMRES);
+	my $H = sprintf("%d",($h * $fact * 72) / $GSPNMRES);
+	my $cmd = "convert $pre-temp.pnm -resize ${W}x${H}! $PNGCNF$pre.png";
+	$self->execution($cmd);
+    } 
+}
+### --- Fabrication d'images PNG des pages d'un document ---------------------
+# 15/10/07 - Première version
+# Les pages du document sont sensées avoir toutes les mêmes dimensions
+### --------------------------------------------------------------------------
+sub mkpngs {
+    my($self,$fact,$bord,$repertoire) = @_;
+    my $f   = $self->{FICHIER};
+    my $pre = $self->{PREFIXE};
+    # Acquisition de la boîte enveloppe des pages.
+    my @B = &getenveloppe($self->{BBOXPAGES});
+    $self->message("Enveloppe des pages : $B[0] $B[1] $B[2] $B[3]");
+    # Production des images au format PNM.
+    my $cmd = "$GSPNM -sOutputFile=$pre-\%03d.pnm $f";
+    $self->execution( $cmd.$GSPNMP );
+    if (-f "$pre-001.pnm") {
+	# Dimensions d'une page au format PNM
+	my ($w,$h) = &getimagedimensions("$pre-001.pnm");
+	# Inscription dans le fichier log
+	$self->message("Dimensions de $pre-001.pnm : $w X $h");
+	# Largeur du cropping
+	my $lc = ($B[2] - $B[0]) * $GSPNMRES / 72;
+	# Hauteur du cropping
+	my $hc = ($B[3] - $B[1]) * $GSPNMRES / 72;
+	# Décalage en largeur du cropping
+	my $dlc = $B[0] * $GSPNMRES / 72;
+	# Décalage en hauteur du cropping
+	my $dhc = $h - $B[3] * $GSPNMRES / 72;
+	# Géométrie du cropping
+	my $crop = sprintf("-crop %dx%d+%d+%d",$lc,$hc,$dlc,$dhc);
+	# Resizing
+	my $resize = sprintf("-resize %dx",($B[2]-$B[0])*$fact);
+	# Bordure
+	my $border = "-bordercolor white -border ${bord}x${bord}";
+	# Liste des fichiers à effacer
+	my $liste = " ";
+	for($i=1;$i <= $self->NombreDePages();$i++) {
+	    # Image initiale
+	    my $img = sprintf("$pre-%03d.pnm",$i);
+	    # Image finale
+	    my $png = sprintf("$PNGCNF$repertoire/image%03d.png",$i);
+	    # Commandes chaînées 
+	    my $cmd = "convert $img $crop $$.pnm";
+	    $cmd .= " && convert $$.pnm $resize $border $png";
+	    $cmd .= " && rm $$.pnm";
+	    $self->execution($cmd);
+	    $liste .= "$img ";
+	}	
+	$self->{RMFICHIERS} .= $liste;
+    }
+}
+
+### --- Routines associées aux fichiers PDF ----------------------------------
+sub getinfospdf {
+    my $pdf = shift;
+    my $trailer = $1 if $$pdf =~ /(trailer\s*<<.*?>>\s*)/s;
+    # Objet Root
+    my $Root = int $1 if $trailer =~ /\/Root (\d+) 0 R/s;
+    my $Catalog = $1 if $$pdf =~ /\D($Root 0 obj.*?endobj\s*)/s;
+    my $CatalogPages = int $1 if $Catalog =~ /\/Pages (\d+) 0 R\s*/s;
+    # Acquisition du nombre de pages ainsi que les références des objets
+    # pages.
+    my $pages = [];
+    my $n = &getpages($CatalogPages,0,$pdf,$pages);
+    return ($Root,$n,$pages);
+}
+sub getpages {
+    my ($obj, $gen, $pdf, $pages) = @_;
+    my $def = $1 if $$pdf =~ /\s($obj $gen obj.*?endobj\s*)/s;
+    my $total = 0;
+    if ($def =~ /\/Kids\s*\[\s*(.*?)\]/s ) {
+        my $Kids = $1;
+        $Kids =~ s/\s+/ /gs;
+	$Kids =~ s/ R$//s;
+        foreach my $Kid (split " R ", $Kids) {
+            $total += &getpages(split(" ",$Kid),$pdf,$pages);
+        }
+    } else {
+	push @$pages, $obj;
+	$total = 1;
+    }
+    return $total;
+}
+### --- Routines auxilliaires ------------------------------------------------
+sub setcrop {
+    my ($r,$f,$b,$i,$x,$dx,$w,$h) = @_;
+    my $xmin = $w;
+    my $xmax = 0;
+    foreach (@$r) {
+	my ($lx,$ly,$ux,$uy) = split /:/;
+	$xmin = $lx if $lx < $xmin;
+	$xmax = $ux if $ux > $xmax;
+    }
+    my $F = $GSPNMRES / 72;
+    my $B =  sprintf("%d",$b*$F/$f); 
+    my $I =  sprintf("%d",$i*$F/$f);
+    $x  >= 0 and $xmin = $x;
+    my $CX = sprintf("%d",$xmin*$F-$B);
+    $dx >= 0 and $xmax = $xmin + $dx;
+    my $DX = sprintf("%d",($xmax-$xmin)*$F+2*$B);
+    my @crop = ();
+    my $n = 0; my $p = scalar @{ $r };
+    foreach (@$r) {
+	$n++;
+	my ($lx,$ly,$ux,$uy) = split /:/;
+	my $CY = 0; my $DY = 0;
+	if ($n == 1) {
+	    $CY = sprintf("%d",$h-$uy*$F-$B);
+	} else {
+	    $CY = sprintf("%d",$h-$uy*$F-$I);
+	}
+	if ($n == $p) {
+	    $DY  = sprintf("%d",$h-$ly*$F+$B);
+	    $DY -= $CY;
+	} else {
+	    $DY  = sprintf("%d",$h-$ly*$F);
+	    $DY -= $CY;
+	}
+	push @crop, "${DX}x${DY}+${CX}+${CY}";
+    }
+    return @crop;
+}
+sub getenveloppe {
+    my $r = shift;
+    my ($xmin,$ymin,$xmax,$ymax) = (10000,10000,0,0);
+    foreach (@$r) {
+	my ($lx,$ly,$ux,$uy) = split /:/;
+	# Évitement des pages blanches...
+	if ($lx+$ly+$ux+$uy > 4) {
+	    $lx < $xmin and $xmin = $lx;
+	    $ly < $ymin and $ymin = $ly;
+	    $ux > $xmax and $xmax = $ux;
+	    $uy > $ymax and $ymax = $uy;
+	}
+    }
+    return ($xmin,$ymin,$xmax,$ymax);
+}
+sub getimagedimensions {
+    my $f = shift;
+    my $v = my $h = "";
+    my @out = qx{identify $f};
+    if ($out[0]) {
+	for (split /\s+/, $out[0]) {
+	    if ($_ =~ /^(\d+)x(\d+)$/) {
+		$w = $1; $h = $2;
+	    }
+	}
+    }
+    die "Impossible d'identifier $f\n" if $w eq "" or $h eq "";
+    ($w,$h);
+}
+### --- Exécution de commandes -----------------------------------------------
+sub execution {
+    my $self = shift;
+    my $cmd  = shift;
+    open(LOG,">>$self->{PREFIXE}-GS.log");
+    print LOG "> $cmd\n";
+    print LOG qx{ $cmd };
+    close(LOG);
+}
+### --- Messages -------------------------------------------------------------
+sub message {
+    my ($self,$mess) = @_;
+    open(LOG,">>$self->{PREFIXE}-GS.log");
+    print LOG "--> $mess\n";
+    close(LOG);
+}
+### --- Fichiers pilotes -----------------------------------------------------
+# fp_pstopdf ne convient que pour des fichiers produits par dvips (ils 
+# appellent bop-hook) et à la condition que cette procédure (bop-hook) ne soit 
+# pas redéfinie par l'utilisateur. (jms-11/10/07)
+sub fp_dvipstopdf {
+    my ($lx,$ly,$ux,$uy,$m,$f) = @_;
+    return << "eop";
+%!
+/largeur { $ux $lx sub $m 2 mul add } def
+/hauteur { $uy $ly sub $m 2 mul add } def
+/bop-hook {
+    /setpagedevice where { pop << /PageSize [largeur hauteur] >> setpagedevice } if
+    $m dup translate
+    $lx neg $ly neg translate
+} def
+save ($f) run
+%%EOF
+eop
+}
+### --- FIN GS ---------------------------------------------------------------
+package main;
+
+use File::Basename;
+
+### --- Paramètres de la ligne de commande -----------------------------------
+use Getopt::Std;
+getopts("Bb:f:g:i:lp:o:r:s:Tt:x:");
+my $fichier = shift;
+
+### --- Valeurs par défaut ---------------------------------------------------
+my $bordure = 5;
+my $facteur = 1.25;
+my $interpage = 4;
+my $resolution = 288;
+my $graphics_ab = 4;
+my $text_ab = 4;
+my $efface_log = 1;
+my $forcex  = -1;  # valeur de xmin pour chaque page, forcé si >=0
+my $forcedx = -1;  # valeur de xmax - xmin pour chaque page, forcé si >=0
+my $preout = (fileparse($fichier,qw{\..*}))[0];
+
+
+### -- Ajustements suivant la ligne de commande.
+$opt_b and $bordure = $opt_b;
+$opt_f and $facteur = $opt_f;
+$opt_i and $interpage = $opt_i;
+$opt_r and $resolution = $opt_r;
+$opt_g and $graphics_ab = $opt_g;
+$opt_t and $text_ab = $opt_t;
+$opt_l and $efface_log = 0;
+$opt_o and $preout = $opt_o;
+
+if ($opt_x) {
+    my @val = split /\+/, $opt_x;
+    $forcex  = int $val[0];
+    $forcedx = int $val[1];
+}
+
+### --------------------------------------------------------------------------
+GS::SetGSPNMRES($resolution);
+GS::SetGSPNMTAB($graphics_ab);
+GS::SetGSPNMGAB($text_ab);
+
+if ($opt_s) {
+    GS::SetGSPAPERSIZE(" -sPAPERSIZE=$opt_s ");
+}
+### --------------------------------------------------------------------------
+my $f = GS->new($fichier,$preout);
+if ($opt_B) {
+    print join("\n",$f->BBox());
+    print "\n";
+} elsif ($opt_T) {
+    my $p = $f->Prefixe();
+    -d "$p" or mkdir "$p";
+    $f->ImagesPNG($facteur,$bordure,$p);
+} else {
+    $f->UneImagePNG($facteur,$bordure,$interpage,$forcex,$forcedx);
+    $f->MakePDF($bordure);
+}
+
+$f->EffaceFichiers();
+$efface_log and $f->EffaceLog();
+
+### --- FIN ------------------------------------------------------------------
+1;
+
