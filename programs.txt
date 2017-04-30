@@ -1,0 +1,19 @@
+#-----------------------+---------------------------------------------------
+# original script       |  link name
+#-----------------------+---------------------------------------------------
+
+bits.sh                 | bits
+btable.sh               | btable
+lsperm.sh               | lsperm
+listppa.sh              | lsppa
+urlencode.sh            | urlencode
+neroAacDec              | neroAacDec
+neroAacEnc              | neroAacEnc
+neroAacTag              | neroAacTag
+table.sh                | table
+sig_dc                  | sig_dc
+slide_show.sh           | slide-show
+256-colors.sh           | 256-colors
+ctags_with_dep.sh       | ctags-with-dep
+wallpaper.sh            | set-wallpaper
+chrome-limited.sh       | chrome-limited
