@@ -1,0 +1,12 @@
+#!/bin/bash
+#
+# sel_ldr.bash
+# A simple shell script for starting up sel_ldr with an enhanced
+# library path, for Linux. This allows us to install libraries in
+# a user directory rather than having to put them someplace like
+# /usr/lib
+#
+VBOX=/disk_b/src/vbox-1.6.6
+LD_LIBRARY_PATH=${VBOX}/usr/lib/virtualbox:$LD_LIBRARY_PATH
+export LD_LIBRARY_PATH
+exec ${VBOX}/usr/lib/virtualbox/vditool $@
