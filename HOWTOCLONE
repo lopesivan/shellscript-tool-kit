@@ -1,0 +1,2 @@
+#git clone file://${HOME}/git/shellscript-tool-kit.git
+#git remote add origin file://${HOME}/git/shellscript-tool-kit.git
