@@ -17,3 +17,7 @@ slide_show.sh           | slide-show
 ctags_with_dep.sh       | ctags-with-dep
 wallpaper.sh            | set-wallpaper
 chrome-limited.sh       | chrome-limited
+comment-cansi.sh        | comment-cansi
+comment-cpp.sh          | comment-cpp
+comment-language.sh     | comment-language
+comment.sh              | comment
